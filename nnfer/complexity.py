@@ -19,3 +19,15 @@ def count_flops(model: torch.nn.Module, size: int = 112, device: str = "cpu") ->
     if was_training:
         model.train()
     return int(fc.get_total_flops())
+
+
+if __name__ == "__main__":  # python -m nnfer.complexity [names...]
+    import sys
+
+    from nnfer.models import build_model, list_models
+
+    names = sys.argv[1:] or list_models()
+    print(f"{'model':20s} {'params(M)':>10s} {'FLOPs(M)':>10s}")
+    for n in names:
+        m = build_model(n, 7, pretrained=False)
+        print(f"{n:20s} {count_params(m) / 1e6:10.3f} {count_flops(m) / 1e6:10.1f}")
