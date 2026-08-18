@@ -23,7 +23,8 @@ def test_paired_tests_direction_and_effect():
 
 def test_holm_monotone_and_bounded():
     adj = holm([0.01, 0.04, 0.03, 0.20])
-    assert adj == pytest.approx([0.04, 0.08, 0.08, 0.20])
+    # sorted: 0.01*4=0.04, 0.03*3=0.09, 0.04*2=0.08 -> monotone 0.09, 0.20*1
+    assert adj == pytest.approx([0.04, 0.09, 0.09, 0.20])
     assert all(0 <= p <= 1 for p in adj)
 
 
