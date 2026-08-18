@@ -55,7 +55,7 @@ class PAttLite(nn.Module):
         super().__init__()
         self.trunk = MobileNetV1Trunk(pretrained)
         self.patch = nn.Sequential(
-            SepConv(512, 256, k=4, s=2, pad=1),   # 7 -> 4  (paper: k4/s4 same on 14 -> 4)
+            SepConv(512, 256, k=4, s=2, pad=2),   # 7 -> 4  (paper: k4/s4 same on 14 -> 4)
             SepConv(256, 256, k=2, s=2, pad=0),   # 4 -> 2
             nn.Conv2d(256, 256, 1), nn.ReLU(inplace=True),
         )
