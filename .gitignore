@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+runs/
+data/cache/
+*.npy
+*.npz
+*.pt
+*.pth
+*.onnx
+*.tflite
+.venv/

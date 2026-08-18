@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nnfer"
+version = "0.1.0"
+description = "Near-neutral lightweight facial expression recognition via self-knowledge distillation"
+requires-python = ">=3.11"
+
+[tool.setuptools.packages.find]
+include = ["nnfer*", "data*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
