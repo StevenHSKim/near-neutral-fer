@@ -11,3 +11,5 @@ data/cache/
 *.onnx
 *.tflite
 .venv/
+logs/
+runs_smoke/
