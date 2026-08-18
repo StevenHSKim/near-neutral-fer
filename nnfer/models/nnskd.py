@@ -157,7 +157,7 @@ def _make(backbone):
     return builder
 
 
-for _bb in ("shufflenetv2", "efficientface", "mobilenetv3s", "mobilenetv1"):
+for _bb in ("shufflenetv2", "efficientface", "mobilenetv3s", "mobilenetv1", "mobilevit_xxs"):
     register(f"nnskd_{_bb}")(_make(_bb))
 
 

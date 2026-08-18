@@ -69,6 +69,7 @@ BACKBONES = {
     "efficientface": lambda p: EfficientFaceStages(p),
     "mobilenetv3s": lambda p: TimmStages("mobilenetv3_small_100", p),
     "mobilenetv1": lambda p: TimmStages("mobilenetv1_100", p),
+    "mobilevit_xxs": lambda p: TimmStages("mobilevit_xxs", p),
 }
 
 

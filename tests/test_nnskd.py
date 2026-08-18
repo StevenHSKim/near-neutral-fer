@@ -11,7 +11,7 @@ from nnfer.models.backbones import get_backbone
 from nnfer.seed import seed_everything
 
 
-@pytest.mark.parametrize("name", ["shufflenetv2", "efficientface", "mobilenetv3s", "mobilenetv1"])
+@pytest.mark.parametrize("name", ["shufflenetv2", "efficientface", "mobilenetv3s", "mobilenetv1", "mobilevit_xxs"])
 def test_backbone_stages_strides(name):
     bb, ch = get_backbone(name, pretrained=False)
     with torch.no_grad():

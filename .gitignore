@@ -13,3 +13,4 @@ data/cache/
 .venv/
 logs/
 runs_smoke/
+runs_pilot/
