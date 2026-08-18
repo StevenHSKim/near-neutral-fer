@@ -26,8 +26,10 @@ Build an open-source, fully reproducible research codebase that
 | Counterparts | EfficientFace (AAAI'21), PAtt-Lite (IEEE Access'24), MicroExpNet (IPTA'19), MobileViT-XXS (timm) |
 | Input | 112×112 RGB, ImageNet-pretrained weights where a backbone has them |
 | Seeds | 5 seeds per configuration (0,1,2,3,4) |
-| Framework | PyTorch (single codebase), Python 3.11 venv, pinned requirements |
-| GPU | RTX 4060 Ti 8 GB (local) |
+| Framework | PyTorch (single codebase), Python 3.11 conda env `nnfer`, pinned requirements |
+| Compute | Lab desktop via SSH (`lab-wsl`, WSL Ubuntu, RTX 2080 Ti 11 GB, 16 threads, 31 GB RAM). Code developed locally, synced through GitHub (`StevenHSKim/near-neutral-fer`), training launched remotely with nohup, only run artefacts (json/npz) pulled back for analysis |
+| Raw data location | `/mnt/c/Users/steve/Desktop/dataset/{RAFDB,FERPlus,CKPlus}` on lab desktop; preprocessed 112×112 cache stored under `~/haesung/data` (WSL ext4) |
+| CK+ | Only the Kaggle CK+48 variant (981 last-3-frame images, no sequences) is available → **decision A**: CK+ is used as a cross-dataset generalisation test only; the onset low-intensity test is dropped (can be added later if full CK+ sequences are obtained) |
 
 ## 3. Datasets and splits
 
@@ -35,7 +37,7 @@ Build an open-source, fully reproducible research codebase that
 |---|---|---|---|
 | RAF-DB basic | 7 (Sur, Fea, Dis, Hap, Sad, Ang, Neu) | 12,271 / 3,068 (official) | Main benchmark |
 | FERPlus | 8 (Neu, Hap, Sur, Sad, Ang, Dis, Fea, Con) → majority-vote label, 10 crowd votes kept | official Train / PublicTest (val) / PrivateTest (test) | Second benchmark + near-neutral subset |
-| CK+ | 7 (peak-frame labels, 327 seqs) | not used for training | Low-intensity cross-dataset test |
+| CK+ (CK+48) | 7 (anger, contempt, disgust, fear, happy, sadness, surprise; 981 imgs, 48×48) | not used for training | Cross-dataset generalisation test (classes mapped to the training label set; contempt excluded) |
 
 - Validation: RAF-DB has no official val split → hold out 10 % of train (stratified,
   fixed seed 0, same split for every model) for model selection / early stopping;
@@ -75,8 +77,9 @@ Build an open-source, fully reproducible research codebase that
    Disgust, Anger) — fixed a-priori.
 4. FERPlus ambiguous subset: majority label ≠ Neutral **and** neutral vote share ≥ τ
    (τ = 0.3 primary; 0.2/0.4 sensitivity). Accuracy + macro-F1 on this subset.
-5. CK+ low-intensity test: frames in the first third of each sequence (after the
-   neutral first frame), labelled with the sequence's peak label. Accuracy + FNR.
+5. CK+48 cross-dataset test (RAF-DB-trained models, no fine-tuning): accuracy,
+   macro-F1 and FNR on the 6 overlapping classes (contempt excluded). Generalisation
+   evidence, not a near-neutral metric.
 6. Calibration: mean prediction entropy, ECE (15 bins).
 
 **Efficiency**: Params, FLOPs (fvcore/thop at 112×112), CPU latency (ONNX Runtime,
@@ -106,19 +109,43 @@ Related work to cite but not run: GSDNet (gradual self-distillation FER, non-lig
 no code), FRSKD (Ji et al., CVPR 2021), Face2Exp (CVPR 2022), Emotional-to-Neutral
 Transformation (2024), LiteFer (2024).
 
-## 8. Proposed method (Stage 2, to be refined after baselines)
+## 8. Proposed method — NN-SKD (Near-Neutral Self-Knowledge Distillation)
 
-- Backbone: lightweight CNN (start from MobileNetV3-Small-ish or the strongest
-  counterpart backbone) at 112×112.
-- Training-only Self-KD path: auxiliary heads on stage-2/3/4 features; a
-  multi-scale fusion module (FRSKD-style feature refinement) fuses low-level local
-  features with the top feature and acts as the teacher for both the top head and the
-  intermediate heads (KL on logits + feature-distillation loss). All auxiliary
-  modules are dropped at inference → identical Params/FLOPs to the plain backbone.
-- Neutral-aware component (candidate, decided by ablation): margin/contrastive term
-  that pushes non-neutral low-intensity samples away from the neutral prototype.
-- Ablations: (a) backbone only, (b) + intermediate heads (BYOT), (c) + fusion
-  teacher, (d) + neutral-aware loss.
+Design principle: near-neutral differences live in small local regions (mouth
+corner, eye corner, glabella) that survive in low-level feature maps (28×28, 14×14)
+but vanish at the 4×4/7×7 top. A training-only fusion teacher built from the
+network's own lower stages transfers that local knowledge upward; at inference every
+auxiliary module is removed, so Params/FLOPs equal the plain backbone.
+
+```
+112×112 → S1(56) → S2(28) → S3(14) → S4(7/4) → GAP → FC → z_S   [student = deployed]
+                     │aux      │aux      │adapter(1×1)
+                     z_2       z_3       ▼
+                     └────┬────┘   LGF-Teacher: lateral 1×1 on S2/S3/S4 → resample
+                          ▼        to 14×14 → concat → SE + spatial attention → F_T
+                     (KL from z_T)                → GAP → FC → z_T
+```
+
+- Backbone: the strongest lightweight counterpart backbone found in Stage 1
+  (candidates: ShuffleNetV2 1.0×, MobileNetV3-Small), ImageNet-pretrained, 112×112.
+  Using a counterpart's backbone isolates the gain to Self-KD.
+- LGF-Teacher (training only): lateral 1×1 convs align channels (≤256), features
+  resampled to S3 resolution, fused with channel (SE) + spatial (CBAM-style)
+  attention, then GAP → FC → z_T.
+- Auxiliary heads (training only, BYOT-style) after S2 and S3 → z_2, z_3.
+- Losses: L = L_CE(z_T,z_S,z_3,z_2; label smoothing 0.1)
+  + λ_kd·Σ KL(z_i ‖ sg(z_T)/T) over i∈{S,3,2}
+  + λ_f·‖norm(A(adapter(S4))) − norm(A(F_T))‖² (spatial-attention feature KD, FRSKD)
+  + λ_nm·L_NM (Neutral-Margin: for non-neutral samples enforce z_y − z_neutral ≥ m,
+    KD weight up-weighted for samples the teacher finds near-neutral; ablation item).
+  λ_kd, λ_f ramp 0→1 over the first epochs (stability). Hyper-parameters tuned on the
+  RAF-DB val split only, then frozen for all datasets.
+- Ablations (5 seeds each): (a) backbone only, (b) + aux heads (BYOT), (c) + LGF
+  teacher logit KD, (d) + attention feature KD, (e) + Neutral-Margin; plus a
+  reference row keeping the teacher branch at inference (upper bound of the recovery).
+- Risks: teacher weaker than student early (sg + ramp + CE on teacher); memory
+  (fusion at 14×14 only); small gains (first analyse counterparts' neutral
+  confusions and Grad-CAM to confirm the local-region failure mode before finalising).
 
 ## 9. Repository layout
 
@@ -141,7 +168,7 @@ near-neutral-fer/
 
 ## 10. Milestones (each requires user confirmation before the next)
 
-1. Plan + counterparts (this document) ✔ pending review
+1. Plan + counterparts (this document) ✔ approved 2026-08-18
 2. Environment + data pipeline + manifests + tests
 3. Counterpart implementation, param/FLOP checks vs paper, 1-seed smoke runs
 4. Full baseline runs (5 seeds) + preliminary analysis
