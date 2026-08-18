@@ -39,6 +39,7 @@ def test_near_neutral_flag(tmp_path):
     m = build_manifest(_make_raw(tmp_path), tau=0.3)
     assert m.near_neutral.tolist() == [False, True, False]
     assert m.total_votes.tolist() == [10, 9, 8]
+    (tmp_path / "b").mkdir()
     m2 = build_manifest(_make_raw(tmp_path / "b"), tau=0.4)
     assert m2.near_neutral.tolist() == [False, False, False]
 
