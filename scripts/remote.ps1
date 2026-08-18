@@ -18,5 +18,5 @@ $pull$Cmd
 # Command is streamed over stdin so no shell-quoting gymnastics are needed.
 # UTF-8 without BOM: PowerShell 5.1 would otherwise prepend a BOM that bash chokes on.
 $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
-$script | ssh -o BatchMode=yes $SshHost "tr -d '\r' | bash -l"
+$script | ssh -o BatchMode=yes $SshHost "sed '1s/^\xEF\xBB\xBF//' | tr -d '\r' | bash -l"
 exit $LASTEXITCODE
