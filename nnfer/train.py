@@ -11,14 +11,14 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from torch import nn
 from torch.utils.data import DataLoader
 
 from nnfer.complexity import count_flops, count_params
 from nnfer.data.dataset import CachedFER
-from nnfer.data.labels import NUM_CLASSES
+from nnfer.data.labels import NEUTRAL_INDEX, NUM_CLASSES
 from nnfer.data.transforms import build_transforms
 from nnfer.engine import build_scheduler, evaluate, train_one_epoch
+from nnfer.losses import NNSKDLoss
 from nnfer.metrics import compute_metrics
 from nnfer.models import build_model, list_models
 from nnfer.runio import env_info, run_dir, save_json
@@ -46,6 +46,21 @@ def parse_args(argv=None):
     ap.add_argument("--max-steps", type=int, default=None, help="debug: cap train steps per epoch")
     ap.add_argument("--tag", default="", help="suffix appended to the model name in the run dir")
     ap.add_argument("--overwrite", action="store_true")
+    # NN-SKD (proposed model) switches — ignored by plain-logit models
+    g = ap.add_argument_group("nnskd")
+    g.add_argument("--no-aux-heads", action="store_true")
+    g.add_argument("--no-teacher", action="store_true", help="also disables kd/feat terms")
+    g.add_argument("--fuse-ch", type=int, default=128)
+    g.add_argument("--feat-stages", default="3,4", help="backbone stages whose attention mimics the teacher")
+    g.add_argument("--infer-head", default="student", choices=["student", "teacher"])
+    g.add_argument("--alpha-aux", type=float, default=0.5)
+    g.add_argument("--kd-lambda", type=float, default=1.0)
+    g.add_argument("--kd-temp", type=float, default=4.0)
+    g.add_argument("--feat-lambda", type=float, default=1.0)
+    g.add_argument("--nm-lambda", type=float, default=0.0)
+    g.add_argument("--nm-margin", type=float, default=1.0)
+    g.add_argument("--nn-weighting", action="store_true")
+    g.add_argument("--ramp-epochs", type=int, default=5)
     a = ap.parse_args(argv)
     if a.epochs is None:
         a.epochs = DEFAULT_EPOCHS[a.dataset]
@@ -78,10 +93,15 @@ def main(argv=None):
     val_ld = make_loader(val_ds, a.batch * 2, False, a.workers, g)
     test_ld = make_loader(test_ds, a.batch * 2, False, a.workers, g)
 
-    model = build_model(a.model, C, pretrained=not a.no_pretrained)
+    kw = {}
+    if a.model.startswith("nnskd_"):
+        kw = dict(aux_heads=not a.no_aux_heads, teacher=not a.no_teacher, fuse_ch=a.fuse_ch,
+                  feat_stages=tuple(int(s) for s in a.feat_stages.split(",") if s), infer_head=a.infer_head)
+    model = build_model(a.model, C, pretrained=not a.no_pretrained, **kw)
     params, flops = count_params(model), count_flops(model)
     model.to(device)
-    criterion = nn.CrossEntropyLoss(label_smoothing=a.label_smoothing)
+    criterion = NNSKDLoss(NEUTRAL_INDEX[a.dataset], a.label_smoothing, a.alpha_aux, a.kd_lambda, a.kd_temp,
+                          a.feat_lambda, a.nm_lambda, a.nm_margin, a.ramp_epochs, a.nn_weighting)
     opt = torch.optim.AdamW(model.parameters(), lr=a.lr, weight_decay=a.wd)
     steps = len(train_ld) if a.max_steps is None else min(len(train_ld), a.max_steps)
     sched = build_scheduler(opt, a.epochs, steps, a.warmup)
@@ -95,6 +115,7 @@ def main(argv=None):
     best_acc, best_epoch, t0 = -1.0, -1, time.time()
     for ep in range(1, a.epochs + 1):
         te = time.time()
+        criterion.set_epoch(ep)
         tr = train_one_epoch(model, train_ld, opt, sched, scaler, device, criterion, a.max_steps)
         vl, vy = evaluate(model, val_ld, device)
         vm = compute_metrics(vl, vy, a.dataset, val_ds.manifest)

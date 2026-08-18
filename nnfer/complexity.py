@@ -4,7 +4,13 @@ from torch.utils.flop_counter import FlopCounterMode
 
 
 def count_params(model: torch.nn.Module, trainable_only: bool = False) -> int:
-    return sum(p.numel() for p in model.parameters() if (p.requires_grad or not trainable_only))
+    """Inference-time parameter count (models with training-only branches expose `inference_parameters`)."""
+    params = model.inference_parameters() if hasattr(model, "inference_parameters") else model.parameters()
+    return sum(p.numel() for p in params if (p.requires_grad or not trainable_only))
+
+
+def count_all_params(model: torch.nn.Module) -> int:
+    return sum(p.numel() for p in model.parameters())
 
 
 @torch.no_grad()
