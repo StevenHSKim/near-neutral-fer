@@ -105,6 +105,22 @@ Build an open-source, fully reproducible research codebase that
 | MobileViT-XXS | Mehta & Rastegari, ICLR 2022 (timm) | 1.3 M | Reproducible CNN+ViT hybrid lightweight backbone (stand-in for code-less LiteFer) |
 | Reference (not counterpart) | ResNet-18 (ImageNet) | 11.7 M | Upper-bound representation gap (Stage-1 requirement) |
 
+Recorded deviations from the official recipes (all models share the §4 protocol; verified
+2026-08-18 by `python -m nnfer.complexity`: EfficientFace 1.273 M / 79.7 MFLOPs, PAtt-Lite
+1.094 M / 172.6 MFLOPs, MobileViT-XXS 0.953 M / 135.4 MFLOPs, MicroExpNet 0.085 M / 9.8 MFLOPs,
+ResNet-18 11.18 M / 969.7 MFLOPs at 112×112):
+- EfficientFace: torchvision ShuffleNetV2 (24-ch stem, ImageNet) instead of the 29-ch stem
+  pre-trained on MS-Celeb-1M; plain CE (label smoothing 0.1) instead of the LDG
+  label-distribution loss.
+- PAtt-Lite: single-stage training under the shared optimiser instead of the two-stage
+  freeze/fine-tune schedule with class weights; at 112×112 the patch extraction strides are
+  (2, 2) instead of (4, 2) so the 2×2 patch grid matches the paper's 224×224 geometry; the
+  acknowledged identity-attention bug is replaced by the intended self-attention over patch
+  tokens (`pattlite`), with `pattlite_identity` kept as a reference variant.
+- MicroExpNet: 112×112 RGB→luma input (feature 32×7×7) instead of 84×84 grey; no Inception-v3
+  teacher distillation (plain CE), i.e. an architecture-only lower bound.
+- MobileViT-XXS: timm ImageNet weights, classifier re-initialised.
+
 Related work to cite but not run: GSDNet (gradual self-distillation FER, non-lightweight,
 no code), FRSKD (Ji et al., CVPR 2021), Face2Exp (CVPR 2022), Emotional-to-Neutral
 Transformation (2024), LiteFer (2024).
@@ -169,8 +185,10 @@ near-neutral-fer/
 ## 10. Milestones (each requires user confirmation before the next)
 
 1. Plan + counterparts (this document) ✔ approved 2026-08-18
-2. Environment + data pipeline + manifests + tests
-3. Counterpart implementation, param/FLOP checks vs paper, 1-seed smoke runs
+2. Environment + data pipeline + manifests + tests ✔ 2026-08-18
+3. Counterpart implementation, param/FLOP checks vs paper, 1-seed smoke runs ✔ 2026-08-18
+   (3-epoch RAF-DB smoke, seed 0: MobileViT-XXS 73.6 %, ResNet-18 75.3 %, PAtt-Lite 68.3 %,
+   EfficientFace 65.8 %, MicroExpNet 39.3 % test acc; ≈4–18 s/epoch on RTX 2080 Ti)
 4. Full baseline runs (5 seeds) + preliminary analysis
 5. Proposed model design + ablations
 6. Full runs, statistics, export/latency, README + report
