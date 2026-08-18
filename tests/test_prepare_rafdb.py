@@ -8,7 +8,7 @@ from data.prepare_rafdb import build_manifest
 from nnfer.data.cache import load_rgb, write_cache
 
 
-def _make_raw(tmp: Path, n_train=40, n_test=10):
+def _make_raw(tmp: Path, n_train=70, n_test=10):
     (tmp / "EmoLabel").mkdir()
     (tmp / "Image" / "aligned").mkdir(parents=True)
     lines = []
@@ -28,13 +28,13 @@ def test_manifest_splits_and_labels(tmp_path):
     assert set(m.columns) >= {"path", "label", "split"}
     assert m.label.between(0, 6).all()
     assert (m.split == "test").sum() == 10
-    assert (m.split == "val").sum() == 4  # 10 % of 40
-    assert (m.split == "train").sum() == 36
+    assert (m.split == "val").sum() == 7  # 10 % of 70
+    assert (m.split == "train").sum() == 63
     assert all(Path(p).exists() for p in m.path)
 
 
 def test_val_split_is_deterministic_and_stratified(tmp_path):
-    raw = _make_raw(tmp_path, n_train=70)
+    raw = _make_raw(tmp_path)
     a = build_manifest(raw)
     b = build_manifest(raw)
     assert (a[a.split == "val"].path.values == b[b.split == "val"].path.values).all()
@@ -48,7 +48,7 @@ def test_write_cache_roundtrip(tmp_path):
     imgs = [load_rgb(Path(p), 112) for p in m.path]
     write_cache(imgs, m, tmp_path / "out", "rafdb")
     arr = np.load(tmp_path / "out" / "rafdb_images.npy", mmap_mode="r")
-    assert arr.shape == (50, 112, 112, 3) and arr.dtype == np.uint8
+    assert arr.shape == (80, 112, 112, 3) and arr.dtype == np.uint8
     m2 = pd.read_csv(tmp_path / "out" / "rafdb_manifest.csv")
-    assert len(m2) == 50 and (tmp_path / "out" / "rafdb_manifest.md5").exists()
+    assert len(m2) == 80 and (tmp_path / "out" / "rafdb_manifest.md5").exists()
     assert (m2.label.values == m.label.values).all()
