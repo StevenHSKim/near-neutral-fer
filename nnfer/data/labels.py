@@ -31,3 +31,15 @@ NEAR_NEUTRAL_CLASSES = {
 }
 
 NUM_CLASSES = {"rafdb": len(RAFDB_CLASSES), "ferplus": len(FERPLUS_CLASSES)}
+
+# FER2013 csv emotion ids (0 Angry,1 Disgust,2 Fear,3 Happy,4 Sad,5 Surprise,6 Neutral) -> RAF-DB index
+FER2013_TO_RAFDB = {0: 5, 1: 2, 2: 1, 3: 3, 4: 4, 5: 0, 6: 6}
+# SFEW 2.0 emotion strings -> RAF-DB index
+SFEW_TO_RAFDB = {"angry": 5, "disgust": 2, "fear": 1, "happy": 3, "neutral": 6, "sad": 4, "surprise": 0}
+
+# Every dataset name -> the label space (taxonomy) its labels are expressed in.
+LABEL_SPACE = {"rafdb": "rafdb", "ferplus": "ferplus", "ckplus": "rafdb", "fer2013": "rafdb", "sfew": "rafdb"}
+
+
+def label_space(dataset: str) -> str:
+    return LABEL_SPACE[dataset]

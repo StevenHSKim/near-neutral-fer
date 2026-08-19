@@ -6,7 +6,8 @@ import pandas as pd
 
 from nnfer.data.labels import FERPLUS_CLASSES, RAFDB_CLASSES
 
-DATASETS = (("rafdb", RAFDB_CLASSES), ("ferplus", FERPLUS_CLASSES), ("ckplus", RAFDB_CLASSES))
+DATASETS = (("rafdb", RAFDB_CLASSES), ("ferplus", FERPLUS_CLASSES), ("ckplus", RAFDB_CLASSES),
+            ("fer2013", RAFDB_CLASSES), ("sfew", RAFDB_CLASSES))
 
 
 def build_report(cache_root: Path) -> str:

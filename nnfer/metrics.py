@@ -8,7 +8,7 @@ import pandas as pd
 from scipy.special import softmax
 from sklearn.metrics import accuracy_score, confusion_matrix, f1_score
 
-from nnfer.data.labels import NEAR_NEUTRAL_CLASSES, NEUTRAL_INDEX, NUM_CLASSES
+from nnfer.data.labels import NEAR_NEUTRAL_CLASSES, NEUTRAL_INDEX, NUM_CLASSES, label_space
 
 TAUS = (0.2, 0.3, 0.4)
 
@@ -52,7 +52,7 @@ def _core(preds, labels, probs, num_classes, neutral, nn_classes):
 def compute_metrics(logits: np.ndarray, labels: np.ndarray, dataset: str,
                     manifest: pd.DataFrame | None = None) -> dict:
     """Metrics dict for one split. `dataset` in {rafdb, ferplus, ckplus} (ckplus uses RAF-DB space)."""
-    space = "rafdb" if dataset == "ckplus" else dataset
+    space = label_space(dataset)
     C = NUM_CLASSES[space]
     neutral = NEUTRAL_INDEX[space]
     nn_classes = NEAR_NEUTRAL_CLASSES[space]

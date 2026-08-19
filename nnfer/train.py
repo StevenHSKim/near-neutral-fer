@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader
 
 from nnfer.complexity import count_flops, count_params
 from nnfer.data.dataset import CachedFER
-from nnfer.data.labels import NEUTRAL_INDEX, NUM_CLASSES
+from nnfer.data.labels import NEUTRAL_INDEX, NUM_CLASSES, label_space
 from nnfer.data.transforms import build_transforms
 from nnfer.engine import build_scheduler, evaluate, train_one_epoch
 from nnfer.losses import NNSKDLoss
@@ -24,13 +24,13 @@ from nnfer.models import build_model, list_models
 from nnfer.runio import env_info, run_dir, save_json
 from nnfer.seed import seed_everything, worker_init_fn
 
-DEFAULT_EPOCHS = {"rafdb": 60, "ferplus": 40}
+DEFAULT_EPOCHS = {"rafdb": 60, "ferplus": 40, "fer2013": 40, "sfew": 60}
 
 
 def parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--model", required=True, choices=list_models())
-    ap.add_argument("--dataset", required=True, choices=["rafdb", "ferplus"])
+    ap.add_argument("--dataset", required=True, choices=sorted(DEFAULT_EPOCHS))
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--epochs", type=int, default=None, help="default: 60 rafdb / 40 ferplus")
     ap.add_argument("--batch", type=int, default=64)
@@ -83,7 +83,8 @@ def main(argv=None):
     out.mkdir(parents=True, exist_ok=True)
     g = seed_everything(a.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    C = NUM_CLASSES[a.dataset]
+    space = label_space(a.dataset)
+    C = NUM_CLASSES[space]
     cache = Path(a.cache).expanduser() / a.dataset
 
     train_ds = CachedFER(cache, a.dataset, "train", build_transforms(True))
@@ -100,7 +101,7 @@ def main(argv=None):
     model = build_model(a.model, C, pretrained=not a.no_pretrained, **kw)
     params, flops = count_params(model), count_flops(model)
     model.to(device)
-    criterion = NNSKDLoss(NEUTRAL_INDEX[a.dataset], a.label_smoothing, a.alpha_aux, a.kd_lambda, a.kd_temp,
+    criterion = NNSKDLoss(NEUTRAL_INDEX[space], a.label_smoothing, a.alpha_aux, a.kd_lambda, a.kd_temp,
                           a.feat_lambda, a.nm_lambda, a.nm_margin, a.ramp_epochs, a.nn_weighting)
     opt = torch.optim.AdamW(model.parameters(), lr=a.lr, weight_decay=a.wd)
     steps = len(train_ld) if a.max_steps is None else min(len(train_ld), a.max_steps)
@@ -139,7 +140,7 @@ def main(argv=None):
         "wall_sec": time.time() - t0, "env": env_info(),
     }
     preds = {"test_logits": tl.astype(np.float32), "test_labels": ty}
-    if a.dataset == "rafdb":  # cross-dataset generalisation test (spec §5.5)
+    if space == "rafdb" and a.dataset != "ckplus":  # cross-dataset generalisation test (spec §5.5)
         ck_cache = Path(a.cache).expanduser() / "ckplus"
         if (ck_cache / "ckplus_manifest.csv").exists():
             ck_ds = CachedFER(ck_cache, "ckplus", "test", build_transforms(False))
