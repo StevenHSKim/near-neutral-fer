@@ -17,8 +17,9 @@ from nnfer.complexity import count_flops, count_params
 from nnfer.data.dataset import CachedFER
 from nnfer.data.labels import NEUTRAL_INDEX, NUM_CLASSES, label_space
 from nnfer.data.transforms import build_transforms
-from nnfer.engine import build_scheduler, evaluate, train_one_epoch
+from nnfer.engine import ModelEMA, build_scheduler, evaluate, train_one_epoch
 from nnfer.losses import NNSKDLoss
+from nnfer.mixup import MixupCutmix
 from nnfer.metrics import compute_metrics
 from nnfer.models import build_model, list_models
 from nnfer.runio import env_info, run_dir, save_json
@@ -61,6 +62,14 @@ def parse_args(argv=None):
     g.add_argument("--nm-margin", type=float, default=1.0)
     g.add_argument("--nn-weighting", action="store_true")
     g.add_argument("--ramp-epochs", type=int, default=5)
+    # NN-SKD v2 training recipe (all training-only; inference unchanged)
+    g2 = ap.add_argument_group("v2 recipe")
+    g2.add_argument("--mixup-alpha", type=float, default=0.0)
+    g2.add_argument("--cutmix-alpha", type=float, default=0.0)
+    g2.add_argument("--mix-p", type=float, default=0.5)
+    g2.add_argument("--logit-adj", type=float, default=0.0, help="tau for logit adjustment (0 = off)")
+    g2.add_argument("--ema-kd", type=float, default=0.0, help="lambda for EMA self-teacher KD (0 = off)")
+    g2.add_argument("--ema-m", type=float, default=0.999)
     a = ap.parse_args(argv)
     if a.epochs is None:
         a.epochs = DEFAULT_EPOCHS[a.dataset]
@@ -102,7 +111,12 @@ def main(argv=None):
     params, flops = count_params(model), count_flops(model)
     model.to(device)
     criterion = NNSKDLoss(NEUTRAL_INDEX[space], a.label_smoothing, a.alpha_aux, a.kd_lambda, a.kd_temp,
-                          a.feat_lambda, a.nm_lambda, a.nm_margin, a.ramp_epochs, a.nn_weighting)
+                          a.feat_lambda, a.nm_lambda, a.nm_margin, a.ramp_epochs, a.nn_weighting,
+                          ema_lambda=a.ema_kd)
+    if a.logit_adj > 0:
+        criterion.set_priors(np.bincount(train_ds.labels, minlength=C), a.logit_adj)
+    mix_fn = MixupCutmix(a.mixup_alpha, a.cutmix_alpha, a.mix_p) if (a.mixup_alpha > 0 or a.cutmix_alpha > 0) else None
+    ema = ModelEMA(model, a.ema_m) if a.ema_kd > 0 else None
     opt = torch.optim.AdamW(model.parameters(), lr=a.lr, weight_decay=a.wd)
     steps = len(train_ld) if a.max_steps is None else min(len(train_ld), a.max_steps)
     sched = build_scheduler(opt, a.epochs, steps, a.warmup)
@@ -117,7 +131,8 @@ def main(argv=None):
     for ep in range(1, a.epochs + 1):
         te = time.time()
         criterion.set_epoch(ep)
-        tr = train_one_epoch(model, train_ld, opt, sched, scaler, device, criterion, a.max_steps)
+        tr = train_one_epoch(model, train_ld, opt, sched, scaler, device, criterion, a.max_steps,
+                             mix_fn=mix_fn, ema=ema)
         vl, vy = evaluate(model, val_ld, device)
         vm = compute_metrics(vl, vy, a.dataset, val_ds.manifest)
         with hist_path.open("a", newline="") as f:
