@@ -116,13 +116,17 @@ def main(argv=None):
     if a.logit_adj > 0:
         criterion.set_priors(np.bincount(train_ds.labels, minlength=C), a.logit_adj)
     mix_fn = MixupCutmix(a.mixup_alpha, a.cutmix_alpha, a.mix_p) if (a.mixup_alpha > 0 or a.cutmix_alpha > 0) else None
-    ema = ModelEMA(model, a.ema_m) if a.ema_kd > 0 else None
+    # EMA horizon must not exceed the data scale: cap momentum so the effective window is ~1 epoch
+    # (m=0.999 froze the teacher near its init on SFEW's 12 steps/epoch and collapsed training).
+    ema_m = min(a.ema_m, 1.0 - 1.0 / max(2, len(train_ld)))
+    ema = ModelEMA(model, ema_m) if a.ema_kd > 0 else None
     opt = torch.optim.AdamW(model.parameters(), lr=a.lr, weight_decay=a.wd)
     steps = len(train_ld) if a.max_steps is None else min(len(train_ld), a.max_steps)
     sched = build_scheduler(opt, a.epochs, steps, a.warmup)
     scaler = torch.cuda.amp.GradScaler(enabled=(not a.no_amp) and device.type == "cuda")
 
-    save_json({**vars(a), "run_name": name, "params": params, "flops": flops, "env": env_info()}, out / "config.json")
+    save_json({**vars(a), "run_name": name, "params": params, "flops": flops, "ema_m_effective": ema_m,
+               "env": env_info()}, out / "config.json")
     hist_path = out / "history.csv"
     with hist_path.open("w", newline="") as f:
         csv.writer(f).writerow(["epoch", "lr", "train_loss", "train_acc", "val_acc", "val_macro_f1", "sec"])
