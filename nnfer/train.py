@@ -70,6 +70,9 @@ def parse_args(argv=None):
     g2.add_argument("--logit-adj", type=float, default=0.0, help="tau for logit adjustment (0 = off)")
     g2.add_argument("--ema-kd", type=float, default=0.0, help="lambda for EMA self-teacher KD (0 = off)")
     g2.add_argument("--ema-m", type=float, default=0.999)
+    # Born-again self-distillation: teacher = a finished checkpoint of the same deployed architecture
+    g2.add_argument("--teacher-ckpt", default="", help="best.pt of a previous generation; uses --ema-kd as lambda")
+    g2.add_argument("--teacher-model", default="mobilevit_xxs")
     a = ap.parse_args(argv)
     if a.epochs is None:
         a.epochs = DEFAULT_EPOCHS[a.dataset]
@@ -119,7 +122,14 @@ def main(argv=None):
     # EMA horizon must not exceed the data scale: cap momentum so the effective window is ~1 epoch
     # (m=0.999 froze the teacher near its init on SFEW's 12 steps/epoch and collapsed training).
     ema_m = min(a.ema_m, 1.0 - 1.0 / max(2, len(train_ld)))
-    ema = ModelEMA(model, ema_m) if a.ema_kd > 0 else None
+    if a.teacher_ckpt:  # born-again: frozen previous-generation teacher (momentum 1.0 -> update is a no-op)
+        assert a.ema_kd > 0, "--teacher-ckpt needs --ema-kd > 0 as the distillation weight"
+        tm = build_model(a.teacher_model, C, pretrained=False)
+        tm.load_state_dict(torch.load(Path(a.teacher_ckpt).expanduser(), map_location="cpu"))
+        ema = ModelEMA(tm.to(device), momentum=1.0)
+        ema_m = 1.0
+    else:
+        ema = ModelEMA(model, ema_m) if a.ema_kd > 0 else None
     opt = torch.optim.AdamW(model.parameters(), lr=a.lr, weight_decay=a.wd)
     steps = len(train_ld) if a.max_steps is None else min(len(train_ld), a.max_steps)
     sched = build_scheduler(opt, a.epochs, steps, a.warmup)

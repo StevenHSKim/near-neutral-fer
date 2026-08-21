@@ -70,6 +70,23 @@ def test_model_ema_moves_toward_student():
     assert not any(p.requires_grad for p in ema.module.parameters())
 
 
+def test_born_again_teacher_ckpt(tmp_path):
+    from nnfer.train import main
+    rng = np.random.default_rng(0)
+    imgs = [rng.integers(0, 255, (112, 112, 3), dtype=np.uint8) for _ in range(16)]
+    mf = pd.DataFrame({"path": [f"p{i}" for i in range(16)], "label": [i % 7 for i in range(16)],
+                       "split": ["train"] * 8 + ["val"] * 4 + ["test"] * 4})
+    write_cache(imgs, mf, tmp_path / "cache" / "rafdb", "rafdb")
+    common = ["--dataset", "rafdb", "--seed", "1", "--epochs", "1", "--batch", "4", "--workers", "0",
+              "--no-amp", "--no-pretrained", "--cache", str(tmp_path / "cache")]
+    gen0 = main(["--model", "shufflenetv2", "--runs", str(tmp_path / "g0")] + common)
+    gen1 = main(["--model", "shufflenetv2", "--runs", str(tmp_path / "g1"), "--teacher-ckpt",
+                 str(gen0 / "best.pt"), "--teacher-model", "shufflenetv2", "--ema-kd", "1.0"] + common)
+    assert (gen1 / "metrics.json").exists()
+    import json
+    assert json.loads((gen1 / "config.json").read_text())["ema_m_effective"] == 1.0
+
+
 def test_train_with_v2_flags(tmp_path):
     from nnfer.train import main
     rng = np.random.default_rng(0)
