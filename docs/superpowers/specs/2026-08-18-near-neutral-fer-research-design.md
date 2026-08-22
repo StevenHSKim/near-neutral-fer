@@ -189,9 +189,12 @@ near-neutral-fer/
 3. Counterpart implementation, param/FLOP checks vs paper, 1-seed smoke runs ✔ 2026-08-18
    (3-epoch RAF-DB smoke, seed 0: MobileViT-XXS 73.6 %, ResNet-18 75.3 %, PAtt-Lite 68.3 %,
    EfficientFace 65.8 %, MicroExpNet 39.3 % test acc; ≈4–18 s/epoch on RTX 2080 Ti)
-4. Full baseline runs (5 seeds) + preliminary analysis
-5. Proposed model design + ablations
-6. Full runs, statistics, export/latency, README + report
+4. Full baseline runs (5 seeds) + preliminary analysis ✔ 2026-08-19
+5. Proposed model design + ablations ✔ 2026-08-22 — final NN-SKD: spatial LGF self-KD for
+   real-resolution data (RAF-DB), born-again generational self-KD for low-resolution data
+   (FER2013); v2 recipe (mixup/logit-adj) and gen-2 documented as negative results
+6. Full runs, statistics, export/latency, README + report ✔ 2026-08-22
+   (decisive pairings extended to 10 seeds; see docs/final-report.md)
 
 ## 11. Out of scope
 
